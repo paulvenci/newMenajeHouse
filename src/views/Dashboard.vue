@@ -219,11 +219,13 @@ import MonthlySalesChart from '../components/MonthlySalesChart.vue'
 import { useVentasStore } from '../stores/ventasStores'
 import { useRetirosStore } from '../stores/retirosStore'
 import { useClientesStore } from '../stores/clientesStore'
+import { useHistorialPosStore } from '../stores/historialPosStore'
 
 const $q = useQuasar()
 const ventasStore = useVentasStore()
 const retirosStore = useRetirosStore()
 const clientesStore = useClientesStore()
+const historialPosStore = useHistorialPosStore()
 
 const loading = ref(true)
 const loadingChart = ref(true)
@@ -252,6 +254,7 @@ async function loadData() {
     // Cargar todos los datos desde Supabase
     await Promise.all([
       ventasStore.cargarTodasLasVentas(),
+      historialPosStore.cargarVentas(),
       clientesStore.cargarClientes(),
       retirosStore.cargarRetirosDelMes()
     ])
@@ -285,7 +288,7 @@ function calculateStats() {
   let pendRetiro = 0
   let cantDiaria = 0
 
-  // 1. Filtrar y procesar ventas del mes actual
+  // 1. Filtrar y procesar ventas Live del mes actual
   ventasStore.ventas.forEach(venta => {
     if (venta.fecha) {
       const ventaDate = new Date(venta.fecha)
@@ -293,9 +296,6 @@ function calculateStats() {
         const monto = Number(venta.monto) || 0
         const esPagada = venta.estado_pago === 'pagado'
         const esLive = venta.tipo === 'Venta Live'
-
-        // Sumar facturación total del mes
-        total += monto
 
         if (esLive) {
           // Ventas Live pagadas
@@ -306,7 +306,7 @@ function calculateStats() {
             livePendPago += monto
           }
         } else {
-          // Ventas Diarias (POS)
+          // Compatibilidad con ventas diarias antiguas registradas en new_ventas.
           diaria += monto
           cantDiaria++ // Conteo de transacciones diarias
         }
@@ -314,7 +314,22 @@ function calculateStats() {
     }
   })
 
-  // 2. Filtrar y contar retiros pendientes del mes actual (asociados a ventas de tipo Live)
+  // 2. Filtrar y procesar ventas POS del mes actual
+  historialPosStore.ventas.forEach(venta => {
+    const fechaVenta = venta.fecha_venta || venta.created_at
+    if (!fechaVenta) return
+
+    const ventaDate = new Date(fechaVenta)
+    if (ventaDate.getMonth() === mesActual && ventaDate.getFullYear() === anioActual) {
+      diaria += Number(venta.total) || 0
+      cantDiaria++
+    }
+  })
+
+  // Total ventas = ventas cobradas del mes: Live pagadas + ventas diarias/POS.
+  total = livePaid + diaria
+
+  // 3. Filtrar y contar retiros pendientes del mes actual (asociados a ventas de tipo Live)
   retirosStore.retiros.forEach(retiro => {
     if (retiro.fecha) {
       const retiroDate = new Date(retiro.fecha)
