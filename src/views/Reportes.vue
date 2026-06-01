@@ -278,6 +278,24 @@
             <span v-else class="text-grey-4">-</span>
           </q-td>
         </template>
+
+        <!-- Acciones administrativas -->
+        <template v-slot:body-cell-acciones="props">
+          <q-td :props="props">
+            <q-btn
+              flat
+              round
+              dense
+              icon="delete"
+              color="negative"
+              size="sm"
+              :loading="eliminandoId === props.row.id"
+              @click="confirmarEliminarVenta(props.row)"
+            >
+              <q-tooltip>Anular / eliminar venta</q-tooltip>
+            </q-btn>
+          </q-td>
+        </template>
       </q-table>
     </q-card>
 
@@ -360,6 +378,7 @@ const loadingLive = ref(false)
 const loadingPOS = ref(false)
 const dialogCalendario = ref(false)
 const dialogDetallePOS = ref(false)
+const eliminandoId = ref<string | null>(null)
 
 const ventaDetalleSeleccionada = ref<VentaPos | null>(null)
 
@@ -404,7 +423,8 @@ const columnsUnificadas = [
   { name: 'monto', label: 'Valor', field: 'monto', align: 'right' as const, sortable: true },
   { name: 'metodo_pago', label: 'Método Pago', field: 'metodo_pago', align: 'center' as const, format: (val: string) => val ? formatMetodo(val) : 'N/A', sortable: true },
   { name: 'estado_pago', label: 'Estado', field: 'estado_pago', align: 'center' as const, sortable: true },
-  { name: 'detalles', label: 'Ver Ticket', field: 'id', align: 'center' as const }
+  { name: 'detalles', label: 'Ver Ticket', field: 'id', align: 'center' as const },
+  { name: 'acciones', label: 'Acciones', field: 'id', align: 'center' as const }
 ]
 
 onMounted(async () => {
@@ -625,6 +645,57 @@ const ventasUnificadas = computed(() => {
 function mostrarDetallePOS(row: VentaPos) {
   ventaDetalleSeleccionada.value = row
   dialogDetallePOS.value = true
+}
+
+function confirmarEliminarVenta(row: any) {
+  const tipoTexto = row.tipo === 'POS' ? 'venta diaria/POS' : 'venta Live'
+  const detalle = row.tipo === 'POS' ? row.id.substring(0, 8) : row.codigo
+
+  $q.dialog({
+    title: 'Confirmar eliminación',
+    message: `Esta acción eliminará la ${tipoTexto} ${detalle} de forma permanente. ¿Deseas continuar?`,
+    persistent: true,
+    ok: {
+      label: 'Eliminar',
+      color: 'negative',
+      unelevated: true
+    },
+    cancel: {
+      label: 'Cancelar',
+      color: 'grey-7',
+      flat: true
+    }
+  }).onOk(async () => {
+    await eliminarVentaReporte(row)
+  })
+}
+
+async function eliminarVentaReporte(row: any) {
+  if (!row.id) return
+
+  eliminandoId.value = row.id
+  try {
+    if (row.tipo === 'POS') {
+      await historialPosStore.eliminarVenta(row.id)
+    } else {
+      await ventasStore.eliminarVenta(row.id)
+    }
+
+    $q.notify({
+      type: 'positive',
+      message: 'Venta eliminada correctamente',
+      icon: 'check_circle'
+    })
+  } catch (error: any) {
+    console.error('Error al eliminar venta desde reportes:', error)
+    $q.notify({
+      type: 'negative',
+      message: 'No se pudo eliminar la venta: ' + (error?.message || 'error desconocido'),
+      icon: 'error'
+    })
+  } finally {
+    eliminandoId.value = null
+  }
 }
 
 function formatCLP(val: number) {
